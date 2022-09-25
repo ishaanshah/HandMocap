@@ -49,7 +49,6 @@ images_to_process = glob.glob("**/*.png", root_dir=image_dir)
 # Store the order of keypoints
 keypoint_id = []
 for image_path in tqdm(images_to_process):
-    with 
     img = cv2.imread(os.path.join(image_dir, image_path))
     bbox = detect_hand(img)
 
