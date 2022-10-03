@@ -9,7 +9,7 @@ from tqdm import tqdm
 from openpose import pyopenpose as op
 from src.detect_hand import detect_hand
 
-debug = False
+debug = True
 
 # Flags
 parser = argparse.ArgumentParser()
@@ -49,6 +49,9 @@ images_to_process = glob.glob("**/*.png", root_dir=image_dir)
 # Store the order of keypoints
 keypoint_id = []
 for image_path in tqdm(images_to_process):
+    if not "00012.png" in image_path:
+        continue
+    print(image_path)
     img = cv2.imread(os.path.join(image_dir, image_path))
     bbox = detect_hand(img)
 
