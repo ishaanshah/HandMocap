@@ -22,6 +22,22 @@ def plot_keypoints(joints: List[np.array], name: str, bounds: Tuple[int,int]=(-4
     print(f"INFO: Writting keypoints to {name}.html")
     fig.write_html(f"{name}.html")
 
+def project(keypoints3d: np.ndarray, P: np.ndarray):
+    """
+    Project keypoints to 2D using
+
+    Inputs -
+        keypoints3d (N, 3): 3D keypoints
+        P (V,3,4): Projection matrices
+    Outputs -
+        keypoints2d (V, N, 2): Projected 2D keypoints
+    """
+    hom = np.hstack((keypoints3d, np.ones((keypoints3d.shape[0], 1))))
+    projected = np.matmul(P, hom.T).transpose(0, 2, 1) # (V, N, 2)
+    projected = (projected / projected[:,:,-1:])[:,:,:-1]
+    return projected
+
+
 def reprojection_error(keypoints3d: np.ndarray, keypoints2d: np.ndarray, P: np.ndarray, confidence: np.ndarray=None) -> float:
     """
     Calculate average reprojection error across all cameras.
