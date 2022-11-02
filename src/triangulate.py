@@ -31,7 +31,7 @@ class Triangulate:
         error = np.linalg.norm(np.abs(projected - keypoints2d), axis=-1) # V
         return error
 
-def triangulate_joints(keypoints, proj_mats, processor, conf_thresh_start=0.75, min_joints=10, **kwargs):
+def triangulate_joints(keypoints, proj_mats, processor, conf_thresh_start=0.75, min_cams=10, **kwargs):
     """
     Triangulate joint locations using DL.
     
@@ -48,25 +48,22 @@ def triangulate_joints(keypoints, proj_mats, processor, conf_thresh_start=0.75, 
     """
     keypoints3d = []
     residuals = []
-    num_joints = list(keypoints.values())[0].shape[0]
+    num_joints = keypoints.shape[1]
     for joint in range(num_joints):
         conf_thresh = conf_thresh_start
         computed = False
         while conf_thresh > 0 and not computed:
-            selected_keypoints = []
-            selected_projs = []
-            for cam_name in proj_mats.keys():
-                if keypoints[cam_name][joint][2] < conf_thresh:
-                    continue
-                selected_keypoints.append(keypoints[cam_name][joint][:2])
-                selected_projs.append(proj_mats[cam_name])
-            selected_keypoints = np.asarray(selected_keypoints)
-            selected_projs = np.asarray(selected_projs)
-            if selected_keypoints.shape[0] < min_joints:
+            # Select best points
+            chosen = keypoints[:,joint,2] > conf_thresh
+            selected_keypoints = keypoints[chosen,joint,:2]
+            selected_projs = proj_mats[chosen]
+            if selected_keypoints.shape[0] < min_cams:
                 conf_thresh -= 0.1
+                print(f"Changing confidence threshold for keypoint number {joint}")
                 continue
+
+            # Triangulate
             computed = True
-            
             model = processor(selected_keypoints, selected_projs, **kwargs)
             keypoints3d.append(model.keypoint3d)
             residuals.append(model.residuals(selected_keypoints, selected_projs).mean())
@@ -90,5 +87,5 @@ def ransac_processor(keypoints, proj_mats, **kwargs):
     """
     RANSAC processor for triangulating joints.
     """
-    model, inliers = ransac((keypoints, proj_mats), Triangulate, **kwargs)
+    model, _ = ransac((keypoints, proj_mats), Triangulate, **kwargs)
     return model

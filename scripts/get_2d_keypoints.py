@@ -8,13 +8,18 @@ import json
 from tqdm import tqdm
 from openpose import pyopenpose as op
 from src.detect_hand import detect_hand
+from src.utils import natural_sort
 
-debug = True
+debug = False
 
 # Flags
 parser = argparse.ArgumentParser()
 parser.add_argument("--root_dir", required=True)
 parser.add_argument("--model_dir", required=True)
+parser.add_argument("--glob_pattern", required=False, default="**/*.jpg")
+parser.add_argument("--filter", required=False, default=None)
+parser.add_argument("--handedness", required=False, choices=["left", "right"], default="right")
+parser.add_argument("--dump_pred_image", action="store_true")
 args = parser.parse_known_args()
 
 # Custom Params (refer to include/openpose/flags.hpp for more parameters)
@@ -44,23 +49,23 @@ opWrapper.start()
 
 # Read image and find rectangle locations
 image_dir = os.path.join(args[0].root_dir, "image")
-images_to_process = glob.glob("**/*.png", root_dir=image_dir)
+images_to_process = natural_sort(glob.glob(args[0].glob_pattern, root_dir=image_dir))
 
 # Store the order of keypoints
 keypoint_id = []
+if args[0].dump_pred_image:
+    os.makedirs(os.path.join(args[0].root_dir, "pred_images"), exist_ok=True)
+
+keypoints = {}
+images_to_process = list(filter(lambda x: args[0].filter in x, images_to_process))
 for image_path in tqdm(images_to_process):
-    if not "00012.png" in image_path:
-        continue
-    print(image_path)
     img = cv2.imread(os.path.join(image_dir, image_path))
     bbox = detect_hand(img)
 
     # TODO: Incorparate hand information, for now only right hand
+    bbox = [ op.Rectangle(0, 0, 0, 0), op.Rectangle(*bbox) ]
     hand_rectangles = [
-        [
-            op.Rectangle(0, 0, 0, 0),
-            op.Rectangle(*bbox)
-        ]
+        bbox if args[0].handedness == "right" else list(reversed(bbox))
     ]
 
     # Create new datum
@@ -77,6 +82,11 @@ for image_path in tqdm(images_to_process):
         cv2.imshow("OpenPose Prediction", datum.cvOutputData)
         cv2.waitKey(0)
 
+    if args[0].dump_pred_image:
+        cv2.imwrite(os.path.join(args[0].root_dir, "pred_images", os.path.basename(image_path)), datum.cvOutputData)
+
+    keypoints[image_path.split("/")[0]] = [datum.handKeypoints[0].tolist(), datum.handKeypoints[1].tolist()]
+
     # Specific to our dataset
     camera_name = os.path.dirname(image_path)
     frame_id = os.path.basename(image_path).split(".")[0]
@@ -84,3 +94,6 @@ for image_path in tqdm(images_to_process):
 
 with open(os.path.join(args[0].root_dir, "keypoint_id.json"), "w") as f:
     json.dump(keypoint_id, f)
+
+with open(os.path.join(args[0].root_dir, "keypoints_2d", "all.json"), "w") as f:
+    json.dump(keypoints, f)

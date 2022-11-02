@@ -1,8 +1,11 @@
 import numpy as np
 import plotly.graph_objects as go
+import cv2
+import re
+
 from typing import List, Tuple
 
-def plot_keypoints(joints: List[np.array], name: str, bounds: Tuple[int,int]=(-4,4)) -> None:
+def plot_keypoints_3d(joints: List[np.ndarray], name: str, bounds: Tuple[int,int]=(-4,4)) -> None:
     fig= go.Figure(
         [
             go.Scatter3d(
@@ -58,3 +61,17 @@ def reprojection_error(keypoints3d: np.ndarray, keypoints2d: np.ndarray, P: np.n
     error = np.linalg.norm(np.abs(projected - keypoints2d), axis=-1) # (V, N)
     error = (confidence * error) / np.sum(confidence)
     return error.sum(axis=0)
+
+
+def natural_sort(l): 
+    convert = lambda text: int(text) if text.isdigit() else text.lower()
+    alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key)]
+    return sorted(l, key=alphanum_key)
+
+def plot_keypoints_2d(joints: np.ndarray, image: np.ndarray, proj_mat: np.ndarray) -> np.ndarray:
+    keypoints_2d = project(joints, np.asarray([proj_mat]))
+    res = image.copy()
+    for keypoint in keypoints_2d[0]:
+        cv2.circle(res, (int(keypoint[0]), int(keypoint[1])), 5, (0, 0, 255), -1)
+
+    return res
