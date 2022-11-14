@@ -1,6 +1,0 @@
-[submodule "pose2sim"]
-	path = pose2sim
-	url = git@github.com:ishaanshah/pose2sim.git
-[submodule "lib/pose2sim"]
-	path = lib/pose2sim
-	url = git@github.com:ishaanshah/pose2sim.git
