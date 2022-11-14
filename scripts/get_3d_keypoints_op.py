@@ -9,6 +9,7 @@ import shutil
 import xml.etree.cElementTree as ET
 import src.utils.params as param_utils
 import tempfile
+import trimesh
 from openpose import pyopenpose as op
 from tqdm import tqdm
 from src.utils.misc import get_files
@@ -18,7 +19,9 @@ mp_hands = mp.solutions.hands
 # Flag
 parser = argparse.ArgumentParser()
 parser.add_argument("--root", "-r", required=True, type=str)
-parser.add_argument("--models_dir", required=True, type=str)
+parser.add_argument("--models_dir", "-m", required=True, type=str)
+parser.add_argument("--handedness", choices=["left", "right"], required=True, type=str)
+parser.add_argument("--point_cloud", action="store_true")
 subparser = parser.add_subparsers(dest="mode", required=True)
 single_parser = subparser.add_parser("single")
 single_parser.add_argument("--filter", default="", type=str)
@@ -77,8 +80,24 @@ else:
     for frame_id in tqdm(frame_ids[::args[0].frequency]):
         all_files.append(get_files(f"**/*{frame_id}", image_base, ""))
 
+if args[0].point_cloud:
+    point_cloud_dir = os.path.join(args[0].root, "point_cloud")
+    try:
+        shutil.rmtree(point_cloud_dir)
+    except FileNotFoundError:
+        pass
+    os.makedirs(point_cloud_dir, exist_ok=True)
+
+keypoints_dir = os.path.join(args[0].root, "keypoints_3d")
+try:
+    shutil.rmtree(keypoints_dir)
+except FileNotFoundError:
+    pass
+os.makedirs(keypoints_dir, exist_ok=True)
+
 # To plot
 fig_frames = []
+frame_num = 0
 for valid_files in tqdm(all_files):
     assert len(valid_files) <= 54, "Total number of images per frame shouldn't exceed 54"
 
@@ -151,8 +170,8 @@ for valid_files in tqdm(all_files):
             bboxes.append([*bbox_min, *bbox_size])
 
             handRectangles += [
-                op.Rectangle(0, 0, 0, 0),
-                op.Rectangle(*bboxes[-1]),
+                op.Rectangle(*bboxes[-1]) if args[0].handedness == "left" else op.Rectangle(0, 0, 0, 0),
+                op.Rectangle(*bboxes[-1]) if args[0].handedness == "right" else op.Rectangle(0, 0, 0, 0),
             ]
 
     try:
@@ -213,7 +232,7 @@ for valid_files in tqdm(all_files):
 
     if result:
         try:
-            coords = datums[0].handKeypoints3D[1][0]
+            coords = datums[0].handKeypoints3D[0 if args[0].handedness == "left" else 1][0]
             with open("./results.json", "w") as f:
                 json.dump(coords.tolist(), f)
         except Exception:
@@ -233,6 +252,15 @@ for valid_files in tqdm(all_files):
             )
         )
     )
+
+    if args[0].point_cloud:
+        pcd = trimesh.PointCloud(coords[:,:3])
+        _ = pcd.export(os.path.join(point_cloud_dir, f"{frame_num:08d}.ply"))
+
+    with open(os.path.join(keypoints_dir, f"{frame_num:08d}.json"), "w") as f:
+        json.dump(coords.tolist(), f)
+
+    frame_num += 1
 
 fig = go.Figure(
     data = fig_frames[0].data,
