@@ -1,5 +1,6 @@
 import jax.numpy as jnp
 import jax
+from tqdm import tqdm
 from typing import List
 from jaxlie import SO3
 
@@ -41,6 +42,8 @@ class KinematicChain:
                 child_id = self.bones[child]["idx"]
                 bone_vecs = keypoints[:,curr_id]-keypoints[:,child_id] 
                 to_use = ~jnp.logical_or(jnp.isclose(keypoints[:,curr_id,3], 0), jnp.isclose(keypoints[:,child_id,3], 0))
+                if not jnp.count_nonzero(to_use):
+                    raise ValueError(f"No frame has length of bone {child}")
                 bone_lens = jnp.linalg.norm(bone_vecs[:,:3], axis=1)[to_use]
                 self.bones[child]["len"] = bone_lens.mean().item()
         
@@ -58,7 +61,9 @@ class KinematicChain:
         if to_use is None:
             to_use = jnp.ones(num_joints, dtype=bool)
             
-        for i in range(max_iter):
+
+        pbar = tqdm(range(max_iter))
+        for i in pbar:
             residual = (self.forward(params)[to_use] - target[to_use]).reshape(-1, 1)
             j = jax.jacrev(self.forward)(params)[to_use].reshape(-1, num_bones, 4).reshape(-1, 4*num_bones)
 
@@ -84,6 +89,6 @@ class KinematicChain:
             last_update = update
             last_mse = mse
 
-            print(f"Iteration {i}: {mse}")
+            pbar.set_description(f"Iteration {i}: {mse}")
 
         return params

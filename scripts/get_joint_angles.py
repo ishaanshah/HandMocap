@@ -1,6 +1,10 @@
 import json
 import os
 import jax.numpy as jnp
+import shutil
+import logging
+import trimesh
+from tqdm import tqdm
 from glob import glob
 from argparse import ArgumentParser
 from src.skeleton import KinematicChain
@@ -9,7 +13,8 @@ from src.utils.misc import natural_sort
 
 parser = ArgumentParser()
 parser.add_argument("--rest_pose", required=True)
-parser.add_argument("--keypoints_dir", required=True)
+parser.add_argument("--root_dir", required=True)
+parser.add_argument("--point_cloud", action="store_true")
 args = parser.parse_args()
 
 with open(args.rest_pose, "r") as f:
@@ -18,12 +23,44 @@ with open(args.rest_pose, "r") as f:
 chain = KinematicChain(bones["bones"], bones["root"])
 joints = chain.forward()
 
-keypoints_path = natural_sort(glob("*.json", root_dir=args.keypoints_dir))
+keypoints_dir = os.path.join(os.path.join(args.root_dir, "keypoints_3d"))
+keypoints_path = natural_sort(glob("*.json", root_dir=keypoints_dir))
 keypoints = []
 for keypoint_path in keypoints_path:
-    with open(os.path.join(args.keypoints_dir, keypoint_path)) as f:
+    with open(os.path.join(keypoints_dir, keypoint_path)) as f:
         keypoints.append(json.load(f))
+
+assert len(keypoints) != 0, "Atleast one frame needed"
 
 keypoints = jnp.asarray(keypoints)
 chain.update_bone_lengths(keypoints)
-plot_keypoints_3d([joints, chain.forward()], "rest_pose", (-2, 2))
+
+output_dir = os.path.join(args.root_dir, "keypoints_3d_ik")
+logging.warning(f"Deleting files at {output_dir}")
+try:
+    shutil.rmtree(output_dir)
+except:
+    pass
+os.makedirs(output_dir)
+
+if args.point_cloud:
+    point_cloud_dir = os.path.join(args.root_dir, "point_cloud_ik")
+    try:
+        shutil.rmtree(point_cloud_dir)
+    except FileNotFoundError:
+        pass
+    os.makedirs(point_cloud_dir)
+
+for frame in tqdm(range(keypoints.shape[0])):
+    # Zero center the root bone
+    keypoints_z = keypoints[frame,:,:3] - keypoints[frame,0,:3] + jnp.asarray([0, 0, chain.bones["bone_0"]["len"]])
+    target = jnp.vstack([jnp.zeros(3), keypoints_z])
+    to_use = jnp.hstack([True, ~jnp.isclose(keypoints[frame,:,3], 0)])
+    params = chain.IK(target, max_iter=100, mse_threshold=1e-6, to_use=to_use)
+    ik_keyp = chain.forward(params)
+    with open(os.path.join(output_dir, keypoints_path[frame]), "w") as f:
+        json.dump(ik_keyp.tolist(), f)
+    
+    if args.point_cloud:
+        pcd = trimesh.PointCloud(ik_keyp)
+        _ = pcd.export(os.path.join(args.root_dir, "point_cloud_ik", f"{frame:08d}.ply"))
