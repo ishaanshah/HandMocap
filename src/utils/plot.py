@@ -45,4 +45,3 @@ def project(keypoints3d: np.ndarray, P: np.ndarray):
     projected = np.matmul(P, hom.T).transpose(0, 2, 1) # (V, N, 2)
     projected = (projected / projected[:,:,-1:])[:,:,:-1]
     return projected
-

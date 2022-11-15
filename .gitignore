@@ -4,3 +4,4 @@ hands_maximo
 models
 __pycache__
 *.html
+*.ini

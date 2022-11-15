@@ -4,6 +4,7 @@ import jax.numpy as jnp
 import shutil
 import logging
 import trimesh
+import polyscope as ps
 from tqdm import tqdm
 from glob import glob
 from argparse import ArgumentParser
@@ -21,7 +22,7 @@ with open(args.rest_pose, "r") as f:
     bones = json.load(f)
     
 chain = KinematicChain(bones["bones"], bones["root"])
-joints = chain.forward()
+angles = jnp.zeros((len(bones["bones"]), 3))
 
 keypoints_dir = os.path.join(os.path.join(args.root_dir, "keypoints_3d"))
 keypoints_path = natural_sort(glob("*.json", root_dir=keypoints_dir))
