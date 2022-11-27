@@ -4,7 +4,7 @@ import jax.numpy as jnp
 import shutil
 import logging
 import trimesh
-import polyscope as ps
+import numpy as np
 from tqdm import tqdm
 from glob import glob
 from argparse import ArgumentParser
@@ -22,7 +22,7 @@ with open(args.rest_pose, "r") as f:
     bones = json.load(f)
     
 chain = KinematicChain(bones["bones"], bones["root"])
-angles = jnp.zeros((len(bones["bones"]), 3))
+angles = np.zeros((len(bones["bones"]), 3))
 
 keypoints_dir = os.path.join(os.path.join(args.root_dir, "keypoints_3d"))
 keypoints_path = natural_sort(glob("*.json", root_dir=keypoints_dir))
@@ -50,7 +50,18 @@ if args.point_cloud:
         shutil.rmtree(point_cloud_dir)
     except FileNotFoundError:
         pass
+
     os.makedirs(point_cloud_dir)
+
+angles = np.zeros((21, 3))
+angles[6][0] = np.pi / 3
+angles[6][2] = -np.pi / 3
+angles[7][0] = np.pi / 6
+angles[7][1] = np.pi / 6
+angles[7][2] = -np.pi / 2
+angles = jnp.asarray(angles)
+chain.plot_skeleton(angles)
+exit()
 
 for frame in tqdm(range(keypoints.shape[0])):
     # Zero center the root bone
@@ -65,3 +76,5 @@ for frame in tqdm(range(keypoints.shape[0])):
     if args.point_cloud:
         pcd = trimesh.PointCloud(ik_keyp)
         _ = pcd.export(os.path.join(args.root_dir, "point_cloud_ik", f"{frame:08d}.ply"))
+
+    chain.plot_skeleton(params, target)

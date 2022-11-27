@@ -223,7 +223,8 @@ for valid_files in tqdm(all_files):
         with open(os.path.join(params["camera_parameter_path"], f"{i}.xml"), "w") as f:
             f.write(text)
 
-        image_path = os.path.join(args[0].root, "image", valid_files[i])
+        image_path = next(filter(lambda x: params_act[i]["cam_name"] in x, valid_files))
+        image_path = os.path.join(args[0].root, "image", image_path)
         shutil.copyfile(image_path, os.path.join(params["image_dir"], f"{i}.png"))
 
     # Run openpose 3D hand detection module
