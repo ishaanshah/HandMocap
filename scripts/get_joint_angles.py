@@ -36,7 +36,7 @@ assert len(keypoints) != 0, "Atleast one frame needed"
 keypoints = jnp.asarray(keypoints)
 chain.update_bone_lengths(keypoints)
 
-output_dir = os.path.join(args.root_dir, "keypoints_3d_ik")
+output_dir = os.path.join(args.root_dir, "joint_angles")
 logging.warning(f"Deleting files at {output_dir}")
 try:
     shutil.rmtree(output_dir)
@@ -54,28 +54,23 @@ if args.point_cloud:
     os.makedirs(point_cloud_dir)
 
 angles = np.zeros((21, 3))
-# angles[6][0] = np.pi / 3
-# angles[6][2] = -np.pi / 2
-# angles[7][0] = np.pi / 6
-# angles[7][1] = np.pi / 6
-# angles[7][2] = -np.pi / 2
-# angles = jnp.asarray(angles)
-# chain.plot_skeleton(angles, keypoints[0,:,:3] - keypoints[0,0,:3] + jnp.asarray([0, 0, chain.bones["bone_0"]["len"]]))
-# exit()
 
 for frame in tqdm(range(keypoints.shape[0])):
+    if jnp.isclose(keypoints[frame,0,3], 0):
+        logging.warning(f"Root bone not detected, skipping")
+        continue
+
     # Zero center the root bone
     keypoints_z = keypoints[frame,:,:3] - keypoints[frame,0,:3] + jnp.asarray([0, 0, chain.bones["bone_0"]["len"]])
     target = jnp.vstack([jnp.zeros(3), keypoints_z])
     to_use = jnp.hstack([True, ~jnp.isclose(keypoints[frame,:,3], 0)])
     params = chain.IK(target, max_iter=100, mse_threshold=1e-6, to_use=to_use)
     ik_keyp, heads, tails = chain.forward(params)
-    print(params)
     with open(os.path.join(output_dir, keypoints_path[frame]), "w") as f:
-        json.dump(ik_keyp.tolist(), f)
+        json.dump(params.tolist(), f)
     
     if args.point_cloud:
         pcd = trimesh.PointCloud(ik_keyp)
         _ = pcd.export(os.path.join(args.root_dir, "point_cloud_ik", f"{frame:08d}.ply"))
 
-    chain.plot_skeleton(params, target)
+    # chain.plot_skeleton(params, target)

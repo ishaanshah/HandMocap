@@ -2,7 +2,7 @@ import jax.numpy as jnp
 import jax
 import polyscope as ps
 import numpy as np
-import trimesh
+import jaxopt
 from scipy.spatial.transform import Rotation
 from tqdm import tqdm
 from jaxlie import SO3
@@ -73,17 +73,22 @@ class KinematicChain:
         
         ps.show()
         
-    def forward(self, angles):
+    def forward(self, params):
         tails = jnp.zeros((len(self.bones), 3), dtype=float)
         heads = tails.copy()
         stk = [self.root]
+        # global_translation = params[0]
         matrix = jnp.asarray([np.eye(4) for _ in range(len(self.bones))])
+        # angles = params[1:]
+        angles = params
+        constrained_angles = jnp.zeros_like(angles)
+        constrained_angles = constrained_angles.at[self.dof].set(angles[self.dof])
         while len(stk):
             bone_name = stk.pop()
             bone_idx = self.bones[bone_name]["idx"]
             parent_idx = self.bones[bone_name]["parent_idx"]
 
-            r = self.getRotationFromEuler(angles[bone_idx]).as_matrix()
+            r = self.getRotationFromEuler(constrained_angles[bone_idx]).as_matrix()
 
             # Convert to homegenous
             r = jnp.vstack([r, jnp.array([0, 0, 0])])
@@ -133,6 +138,9 @@ class KinematicChain:
 
             for child in self.bones[bone_name]["child"]:
                 stk.append((child, tail))
+        
+        # scaled_heads += global_translation
+        # scaled_tails += global_translation
 
         keypoints = jnp.r_[scaled_heads[:1], scaled_tails]
         return keypoints, scaled_heads, scaled_tails
@@ -164,6 +172,9 @@ class KinematicChain:
 
         #     for child in self.bones[bone_name]["child"]:
         #         stk.append((child, tail))
+
+    def IK_jaxopt(self, target):
+        pass
         
     def IK(self, target, max_iter, mse_threshold, to_use=None, init=None):
         num_bones = len(self.bones)
@@ -184,8 +195,8 @@ class KinematicChain:
         for i in pbar:
             keypoints, _, __ = self.forward(params)
             residual = (keypoints[to_use] - target[to_use]).reshape(-1, 1)
-            j = jax.jacrev(self.forward)(params)[0][to_use].reshape(-1, num_bones, 3).reshape(-1, 3*num_bones)
-            j = j[:,self.dof.flatten()]
+            j = jax.jacrev(self.forward)(params)[0][to_use].reshape(-1, num_bones, 3).reshape(-1, 3*(num_bones))
+            # j = j[:,self.dof.flatten()]
 
             mse = jnp.mean(jnp.square(residual))
             
@@ -199,7 +210,8 @@ class KinematicChain:
             delta = jnp.matmul(
                 jnp.matmul(jnp.linalg.inv(jtj), j.T), residual
             ).ravel()
-            params = params.at[self.dof].set(params[self.dof] - delta)
+            # params = params.at[self.dof].set(params[self.dof] - delta)
+            params = params - delta.reshape(-1, 3)
 
             if update > last_update and update > 0:
                 u /= v
