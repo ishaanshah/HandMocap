@@ -54,14 +54,14 @@ if args.point_cloud:
     os.makedirs(point_cloud_dir)
 
 angles = np.zeros((21, 3))
-angles[6][0] = np.pi / 3
-angles[6][2] = -np.pi / 3
-angles[7][0] = np.pi / 6
-angles[7][1] = np.pi / 6
-angles[7][2] = -np.pi / 2
-angles = jnp.asarray(angles)
-chain.plot_skeleton(angles)
-exit()
+# angles[6][0] = np.pi / 3
+# angles[6][2] = -np.pi / 2
+# angles[7][0] = np.pi / 6
+# angles[7][1] = np.pi / 6
+# angles[7][2] = -np.pi / 2
+# angles = jnp.asarray(angles)
+# chain.plot_skeleton(angles, keypoints[0,:,:3] - keypoints[0,0,:3] + jnp.asarray([0, 0, chain.bones["bone_0"]["len"]]))
+# exit()
 
 for frame in tqdm(range(keypoints.shape[0])):
     # Zero center the root bone
@@ -69,7 +69,8 @@ for frame in tqdm(range(keypoints.shape[0])):
     target = jnp.vstack([jnp.zeros(3), keypoints_z])
     to_use = jnp.hstack([True, ~jnp.isclose(keypoints[frame,:,3], 0)])
     params = chain.IK(target, max_iter=100, mse_threshold=1e-6, to_use=to_use)
-    ik_keyp = chain.forward(params)
+    ik_keyp, heads, tails = chain.forward(params)
+    print(params)
     with open(os.path.join(output_dir, keypoints_path[frame]), "w") as f:
         json.dump(ik_keyp.tolist(), f)
     

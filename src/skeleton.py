@@ -21,7 +21,7 @@ class KinematicChain:
             self.rest_matrixs[bone_idx] = bone["rest_matrix"]
             self.parents[bone_idx] = bone["parent_idx"]
         self.rest_angles = jnp.array(self.rest_angles)
-        self.rest_joints, self.rest_matrices = self.get_rest_pose()
+        # self.rest_joints, self.rest_matrices = self.get_rest_pose()
         self.rest_matrixs = jnp.asarray(self.rest_matrixs)
 
         self.dof = np.zeros((len(self.bones), 3), dtype=bool) # num_joint, 3 (x, y, z)
@@ -30,61 +30,42 @@ class KinematicChain:
         self.dof[0,:] = True # all
 
         # Palm
-        self.dof[1:3,0:2] = True
-        self.dof[5:18:4,0:2] = True
+        self.dof[1:3,0] = True # x
+        self.dof[1:3,2] = True # z
+        self.dof[5:18:4,0] = True # x
+        self.dof[5:18:4,2] = True # z
+        
+        # First finger joints
+        self.dof[6:19:4,0] = True # x
+        self.dof[6:19:4,2] = True # z
 
         # Thumb
         # Special case for thumb because it's roll isn't oriented correctly
-        self.dof[3:5,0:2] = True  # x, y
+        self.dof[3:5,0] = True  # x
+        self.dof[3:5,2] = True  # z
 
         # Index finger
-        self.dof[6,0:2] = True  # x, y
-        self.dof[7:9,1] = True  # x
+        self.dof[7:9,2] = True  # z
 
         # Middle finger
-        self.dof[10,0:2] = True  # x, y
-        self.dof[11:13,1] = True  # x
+        self.dof[11:13,2] = True  # z
 
         # Ring finger
-        self.dof[14,0:2] = True  # x, y
-        self.dof[15:17,1] = True  # x
+        self.dof[15:17,2] = True  # z
         
         # Pinky finger
-        self.dof[18,0:2] = True  # x, y
-        self.dof[19:21,1] = True  # x
+        self.dof[19:21,2] = True  # z
 
-        # self.dof[:,:] = True
         self.dof = jnp.asarray(self.dof)
 
     def plot_skeleton(self, angles=None, target=None):
         """ Debug function """
         ps.init()
 
-        if angles is None:
-            joints = self.rest_joints
-            pt_cloud = ps.register_point_cloud("Skeleton", joints)
-            pt_cloud.add_vector_quantity("x", self.rest_matrices[:,0], color=(1, 0, 0), enabled=True)
-            pt_cloud.add_vector_quantity("y", self.rest_matrices[:,1], color=(0, 1, 0), enabled=True)
-            pt_cloud.add_vector_quantity("z", self.rest_matrices[:,2], color=(0, 0, 1), enabled=True)
-        else:
-            heads, tails, rest_matrices = self.forward2(angles)
-            pt_cloud = ps.register_point_cloud("Skeleton", heads)
-            ps.register_point_cloud("heads", heads)
-            pcd = trimesh.PointCloud(heads)
-            _ = pcd.export("points.ply")
-            exit()
-            # pt_cloud.add_vector_quantity("x", rest_matrices[:,0,:3], color=(1, 0, 0), enabled=True)
-            # pt_cloud.add_vector_quantity("y", rest_matrices[:,1,:3], color=(0, 1, 0), enabled=True)
-            # pt_cloud.add_vector_quantity("z", rest_matrices[:,2,:3], color=(0, 0, 1), enabled=True)
-        
-        # bone_vecs = jnp.zeros((len(self.bones)+1, 3))
-        # for _, bone in self.bones.items():
-        #     bone_idx = bone["idx"]
-        #     if bone_idx:
-        #         bone_vecs = bone_vecs.at[bone_idx-1].set(tails[bone_idx-1] - heads[bone_idx-1])
-        #     # for child in bone["child"]:
-        #     #     child_idx = self.bones[child]["idx"]
-        #     #     bone_vecs = bone_vecs.at[child_idx+1].set(-(joints[child_idx+1] - joints[bone_idx+1]))
+        _, heads, tails, = self.forward(angles)
+        pt_cloud = ps.register_point_cloud("Skeleton", heads)
+        ps.register_point_cloud("heads", heads)
+
         pt_cloud.add_vector_quantity("bones", tails - heads, color=(0,0,0), enabled=True, vectortype='ambient', radius=0.004)
 
         if not target is None:
@@ -92,75 +73,13 @@ class KinematicChain:
         
         ps.show()
         
-
-    def get_rest_pose(self):
-        rest_joints = jnp.zeros((len(self.bones)+1, 3), dtype=float)
-        rest_matrix = jnp.zeros((len(self.bones)+1, 3, 3), dtype=float)
-        rest_matrix = rest_matrix.at[0].set(jnp.identity(3))
-        stk = [(self.root, jnp.array([0, 0, 0]), [jnp.array([1, 0, 0]), jnp.array([0, 1, 0]), jnp.array([0, 0, 1])])]
-        while len(stk):
-            bone_name, loc, [x, y, z]= stk.pop()
-            bone_idx = self.bones[bone_name]["idx"]
-            r = self.getRotationFromEuler(self.rest_angles[bone_idx])
-
-            # Build orthonormal basis for joint w.r.t to parent
-            x_dir_vec = r @ x
-            x_dir_vec = x_dir_vec / jnp.linalg.norm(x_dir_vec)
-            y_dir_vec = r @ y
-            y_dir_vec = y_dir_vec / jnp.linalg.norm(y_dir_vec)
-            z_dir_vec = r @ z
-            z_dir_vec = z_dir_vec / jnp.linalg.norm(z_dir_vec)
-            rest_matrix = rest_matrix.at[bone_idx+1].set(jnp.vstack([x_dir_vec, y_dir_vec, z_dir_vec]))
-
-            # Calculate joint location
-            rest_joints = rest_joints.at[bone_idx+1].set(z_dir_vec*self.bones[bone_name]["len"] + loc)
-
-            for child in self.bones[bone_name]["child"]:
-                stk.append((child, rest_joints[bone_idx+1], [x_dir_vec, y_dir_vec, z_dir_vec]))
-        
-        return rest_joints, rest_matrix
-    
     def forward(self, angles):
-        joints = jnp.zeros((len(self.bones)+1, 3), dtype=float)
-        stk = [(self.root, jnp.array([0, 0, 0]), [jnp.array([1, 0, 0]), jnp.array([0, 1, 0]), jnp.array([0, 0, 1])])]
-        rest_matrix = jnp.zeros((len(self.bones)+1, 3, 3), dtype=float)
-        while len(stk):
-            bone_name, loc, [x, y, z]= stk.pop()
-            bone_idx = self.bones[bone_name]["idx"]
-            
-            # Rotation with respect to parent
-            r = self.getRotationFromEuler(self.rest_angles[bone_idx] + angles[bone_idx]).as_matrix()
-
-            # Build orthonormal basis for joint w.r.t to parent
-            x_dir_vec = r @ x
-            x_dir_vec = x_dir_vec / jnp.linalg.norm(x_dir_vec)
-            y_dir_vec = r @ y
-            y_dir_vec = y_dir_vec / jnp.linalg.norm(y_dir_vec)
-            z_dir_vec = r @ z
-            z_dir_vec = z_dir_vec / jnp.linalg.norm(z_dir_vec)
-
-            # Apply rest matrix
-            # dir_vec = SO3.from_matrix(self.rest_matrices[bone_idx+1]).apply(z_dir_vec)
-            # dir_vec = dir_vec / jnp.linalg.norm(dir_vec)
-            dir_vec = z_dir_vec
-
-            rest_matrix = rest_matrix.at[bone_idx+1].set(jnp.vstack([x_dir_vec, y_dir_vec, z_dir_vec]))
-
-            # Calculate joint location
-            joints = joints.at[bone_idx+1].set(dir_vec*self.bones[bone_name]["len"] + loc)
-
-            for child in self.bones[bone_name]["child"]:
-                stk.append((child, joints[bone_idx+1], [x_dir_vec, y_dir_vec, z_dir_vec]))
-        
-        return joints, rest_matrix
-    
-    def forward2(self, angles):
-        tails = jnp.zeros((len(self.bones)+1, 3), dtype=float)
+        tails = jnp.zeros((len(self.bones), 3), dtype=float)
         heads = tails.copy()
-        stk = [(self.root, jnp.array([0, 0, 0]))]
+        stk = [self.root]
         matrix = jnp.asarray([np.eye(4) for _ in range(len(self.bones))])
         while len(stk):
-            bone_name, loc = stk.pop()
+            bone_name = stk.pop()
             bone_idx = self.bones[bone_name]["idx"]
             parent_idx = self.bones[bone_name]["parent_idx"]
 
@@ -181,7 +100,7 @@ class KinematicChain:
             matrix = matrix.at[bone_idx].set(jnp.einsum('ij,jk->ik', matrix[parent_idx], pose))
 
             for child in self.bones[bone_name]["child"]:
-                stk.append((child, tails[bone_idx+1]))
+                stk.append(child)
             
         for bone_name, bone_data in self.bones.items():
             bone_idx = bone_data["idx"]
@@ -197,7 +116,26 @@ class KinematicChain:
             tail_keypoint = matrix[bone_idx] @ tail_keypoint
             tails = tails.at[bone_data["idx"]].set(tail_keypoint[:3])
 
-        return heads, tails, matrix
+        stk = [(self.root, heads[self.bones[self.root]["idx"]])]
+        scaled_tails = jnp.zeros((len(self.bones), 3), dtype=float)
+        scaled_heads = scaled_tails.copy()
+        while len(stk):
+            bone_name, head = stk.pop()
+            bone_idx = self.bones[bone_name]["idx"];
+
+            dir_vec = tails[bone_idx] - heads[bone_idx]
+            dir_vec = dir_vec / jnp.linalg.norm(dir_vec)
+            bone_len = self.bones[bone_name]["len"]
+            tail = dir_vec*bone_len + head
+
+            scaled_heads = scaled_heads.at[bone_idx].set(head)
+            scaled_tails = scaled_tails.at[bone_idx].set(tail)
+
+            for child in self.bones[bone_name]["child"]:
+                stk.append((child, tail))
+
+        keypoints = jnp.r_[scaled_heads[:1], scaled_tails]
+        return keypoints, scaled_heads, scaled_tails
 
 
     def update_bone_lengths(self, keypoints: jnp.ndarray):
@@ -211,6 +149,21 @@ class KinematicChain:
                     raise ValueError(f"No frame has length of bone {child}")
                 bone_lens = jnp.linalg.norm(bone_vecs[:,:3], axis=1)[to_use]
                 self.bones[child]["len"] = bone_lens.mean().item()
+
+        # stk = [(self.root, jnp.asarray(self.bones[self.root]["head"]))]
+        # while len(stk):
+        #     bone_name, head = stk.pop()
+
+        #     dir_vec = jnp.array(self.bones[bone_name]["tail"]) - jnp.array(self.bones[bone_name]["head"])
+        #     dir_vec = dir_vec / jnp.linalg.norm(dir_vec)
+        #     bone_len = self.bones[bone_name]["len"]
+        #     tail = dir_vec*bone_len + head
+
+        #     self.bones[bone_name]["head"] = head
+        #     self.bones[bone_name]["tail"] = tail
+
+        #     for child in self.bones[bone_name]["child"]:
+        #         stk.append((child, tail))
         
     def IK(self, target, max_iter, mse_threshold, to_use=None, init=None):
         num_bones = len(self.bones)
@@ -229,12 +182,12 @@ class KinematicChain:
 
         pbar = tqdm(range(max_iter))
         for i in pbar:
-            residual = (self.forward(params)[to_use] - target[to_use]).reshape(-1, 1)
-            j = jax.jacrev(self.forward)(params)[to_use].reshape(-1, num_bones, 3).reshape(-1, 3*num_bones)
+            keypoints, _, __ = self.forward(params)
+            residual = (keypoints[to_use] - target[to_use]).reshape(-1, 1)
+            j = jax.jacrev(self.forward)(params)[0][to_use].reshape(-1, num_bones, 3).reshape(-1, 3*num_bones)
             j = j[:,self.dof.flatten()]
 
             mse = jnp.mean(jnp.square(residual))
-            # print(params)
             
             if abs(mse - last_mse) < mse_threshold:
                 return params
@@ -247,9 +200,6 @@ class KinematicChain:
                 jnp.matmul(jnp.linalg.inv(jtj), j.T), residual
             ).ravel()
             params = params.at[self.dof].set(params[self.dof] - delta)
-            print(delta)
-            print(params)
-            print(self.dof)
 
             if update > last_update and update > 0:
                 u /= v
